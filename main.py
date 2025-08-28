@@ -1,0 +1,252 @@
+import gradio as gr
+import numpy as np
+import librosa
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.colors import LinearSegmentedColormap
+import cv2
+import tempfile
+import os
+from pathlib import Path
+
+def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='viridis'):
+    """
+    Create a scrolling spectrogram video from an audio file.
+    
+    Args:
+        audio_file: Path to the input WAV file
+        video_duration: Duration of the output video in seconds
+        fps: Frames per second for the output video
+        colormap: Colormap for the spectrogram
+    
+    Returns:
+        Path to the generated video file
+    """
+    
+    # Load audio file
+    y, sr = librosa.load(audio_file)
+    
+    # Compute spectrogram
+    hop_length = 512
+    n_fft = 2048
+    S = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    S_db = librosa.amplitude_to_db(np.abs(S), ref=np.max)
+    
+    # Get time and frequency axes
+    times = librosa.frames_to_time(np.arange(S_db.shape[1]), sr=sr, hop_length=hop_length)
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    
+    # Calculate video parameters
+    total_frames = int(video_duration * fps)
+    time_per_frame = len(times) / total_frames
+    
+    # Set up the figure
+    fig, ax = plt.subplots(figsize=(12, 8))
+    plt.style.use('dark_background')
+    
+    # Create temporary video file
+    temp_dir = tempfile.mkdtemp()
+    video_path = os.path.join(temp_dir, 'spectrogram_video.mp4')
+    
+    # Set up video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1200, 800))
+    
+    # Window size for scrolling effect
+    window_size = min(200, S_db.shape[1] // 4)  # Show 1/4 of the spectrogram at a time
+    
+    for frame_idx in range(total_frames):
+        ax.clear()
+        
+        # Calculate the current time window
+        center_frame = int(frame_idx * time_per_frame)
+        start_frame = max(0, center_frame - window_size // 2)
+        end_frame = min(S_db.shape[1], center_frame + window_size // 2)
+        
+        # Extract current window of spectrogram
+        current_spec = S_db[:, start_frame:end_frame]
+        current_times = times[start_frame:end_frame]
+        
+        # Plot spectrogram
+        im = ax.imshow(current_spec, 
+                      aspect='auto', 
+                      origin='lower',
+                      extent=[current_times[0], current_times[-1], freqs[0], freqs[-1]],
+                      cmap=colormap,
+                      vmin=S_db.min(),
+                      vmax=S_db.max())
+        
+        # Customize the plot
+        ax.set_xlabel('Time (s)', fontsize=12, color='white')
+        ax.set_ylabel('Frequency (Hz)', fontsize=12, color='white')
+        ax.set_title(f'Scrolling Spectrogram - Time: {current_times[len(current_times)//2]:.2f}s', 
+                    fontsize=14, color='white')
+        
+        # Set y-axis to show frequency range up to Nyquist frequency
+        ax.set_ylim(0, sr // 2)
+        
+        # Add colorbar
+        if frame_idx == 0:
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label('Magnitude (dB)', color='white')
+            cbar.ax.yaxis.set_tick_params(color='white')
+            cbar.ax.yaxis.label.set_color('white')
+        
+        # Style the plot
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['top'].set_color('white')
+        ax.spines['right'].set_color('white')
+        ax.spines['left'].set_color('white')
+        
+        # Add a vertical line to show current time position
+        current_time = times[center_frame] if center_frame < len(times) else times[-1]
+        ax.axvline(x=current_time, color='red', linestyle='--', alpha=0.7, linewidth=2)
+        
+        # Convert matplotlib figure to OpenCV format
+        fig.canvas.draw()
+        buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+        buf = buf.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+        buf = buf[:, :, :3]  # Remove alpha channel
+        
+        # Convert RGB to BGR for OpenCV
+        frame_bgr = cv2.cvtColor(buf, cv2.COLOR_RGB2BGR)
+        frame_resized = cv2.resize(frame_bgr, (1200, 800))
+        
+        # Write frame to video
+        video_writer.write(frame_resized)
+    
+    # Clean up
+    video_writer.release()
+    plt.close(fig)
+    
+    return video_path
+
+def get_audio_duration(audio_file):
+    """
+    Get the duration of an audio file in seconds.
+    """
+    if audio_file is None:
+        return None
+    
+    try:
+        y, sr = librosa.load(audio_file)
+        duration = len(y) / sr
+        return duration
+    except Exception:
+        return None
+
+def process_audio_file(audio_file, duration, fps, colormap):
+    """
+    Process the uploaded audio file and create spectrogram video.
+    """
+    try:
+        if audio_file is None:
+            return None, "Please upload a WAV file."
+        
+        # Create the video
+        video_path = create_spectrogram_video(
+            audio_file, 
+            video_duration=duration, 
+            fps=fps, 
+            colormap=colormap
+        )
+        
+        return video_path, "Video generated successfully!"
+    
+    except Exception as e:
+        return None, f"Error processing audio file: {str(e)}"
+
+def update_duration_slider(audio_file):
+    """
+    Update the duration slider based on the uploaded audio file.
+    """
+    if audio_file is None:
+        return gr.Slider(minimum=1, maximum=60, value=10, step=1, label="Video Duration (seconds)")
+    
+    audio_duration = get_audio_duration(audio_file)
+    if audio_duration:
+        max_duration = max(int(audio_duration), 1)
+        return gr.Slider(
+            minimum=1, 
+            maximum=max_duration, 
+            value=max_duration, 
+            step=1, 
+            label=f"Video Duration (seconds) - Audio: {audio_duration:.1f}s"
+        )
+    else:
+        return gr.Slider(minimum=1, maximum=60, value=10, step=1, label="Video Duration (seconds)")
+
+def create_gradio_app():
+    with gr.Blocks(title="Spectrogram Video Generator") as app:
+        gr.Markdown("# 🎵 Scrolling Spectrogram Video Generator")
+        gr.Markdown("Upload a WAV file to create a scrolling spectrogram video visualization.")
+        
+        with gr.Row():
+            with gr.Column(scale=1):
+                # Input components
+                audio_input = gr.Audio(
+                    label="Upload WAV File",
+                    type="filepath",
+                    format="wav"
+                )
+                
+                with gr.Row():
+                    duration_slider = gr.Slider(
+                        minimum=1,
+                        maximum=60,
+                        value=10,
+                        step=1,
+                        label="Video Duration (seconds)"
+                    )
+                    
+                    fps_slider = gr.Slider(
+                        minimum=15,
+                        maximum=60,
+                        value=30,
+                        step=1,
+                        label="Frames Per Second"
+                    )
+                
+                colormap_dropdown = gr.Dropdown(
+                    choices=["viridis", "plasma", "inferno", "magma", "cividis", "hot", "cool", "spring", "summer", "autumn", "winter"],
+                    value="viridis",
+                    label="Colormap"
+                )
+                
+                generate_btn = gr.Button("Generate Video", variant="primary")
+            
+            with gr.Column(scale=2):
+                # Output components
+                video_output = gr.Video(label="Generated Spectrogram Video")
+                status_output = gr.Textbox(label="Status", interactive=False)
+        
+        # Update duration slider when audio file is uploaded
+        audio_input.change(
+            fn=update_duration_slider,
+            inputs=[audio_input],
+            outputs=[duration_slider]
+        )
+        
+        # Set up the event handler
+        generate_btn.click(
+            fn=process_audio_file,
+            inputs=[audio_input, duration_slider, fps_slider, colormap_dropdown],
+            outputs=[video_output, status_output]
+        )
+        
+        gr.Markdown("""
+        ## How it works:
+        1. Upload a WAV audio file
+        2. Adjust video duration, frame rate, and colormap
+        3. Click "Generate Video" to create a scrolling spectrogram visualization
+        4. The video will show a time-scrolling view of the audio's frequency content
+        
+        **Note:** Processing may take a few minutes depending on file size and video duration.
+        """)
+    
+    return app
+
+if __name__ == "__main__":
+    app = create_gradio_app()
+    app.launch(share=True)
