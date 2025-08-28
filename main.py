@@ -168,7 +168,7 @@ def get_audio_duration(audio_file):
     except Exception:
         return None
 
-def process_audio_file(audio_file, duration, fps, colormap):
+def process_audio_file(audio_file, fps, colormap):
     """
     Process the uploaded audio file and create spectrogram video.
     """
@@ -176,10 +176,15 @@ def process_audio_file(audio_file, duration, fps, colormap):
         if audio_file is None:
             return None, "Please upload a WAV file."
         
-        # Create the video
+        # Get audio duration to use as video duration
+        audio_duration = get_audio_duration(audio_file)
+        if audio_duration is None:
+            return None, "Could not determine audio duration."
+        
+        # Create the video with audio duration
         video_path = create_spectrogram_video(
             audio_file, 
-            video_duration=duration, 
+            video_duration=audio_duration, 
             fps=fps, 
             colormap=colormap
         )
@@ -189,25 +194,6 @@ def process_audio_file(audio_file, duration, fps, colormap):
     except Exception as e:
         return None, f"Error processing audio file: {str(e)}"
 
-def update_duration_slider(audio_file):
-    """
-    Update the duration slider based on the uploaded audio file.
-    """
-    if audio_file is None:
-        return gr.Slider(minimum=1, maximum=60, value=10, step=1, label="Video Duration (seconds)")
-    
-    audio_duration = get_audio_duration(audio_file)
-    if audio_duration:
-        max_duration = max(int(audio_duration), 1)
-        return gr.Slider(
-            minimum=1, 
-            maximum=max_duration, 
-            value=max_duration, 
-            step=1, 
-            label=f"Video Duration (seconds) - Audio: {audio_duration:.1f}s"
-        )
-    else:
-        return gr.Slider(minimum=1, maximum=60, value=10, step=1, label="Video Duration (seconds)")
 
 def create_gradio_app():
     with gr.Blocks(title="Spectrogram Video Generator") as app:
@@ -223,22 +209,13 @@ def create_gradio_app():
                     format="wav"
                 )
                 
-                with gr.Row():
-                    duration_slider = gr.Slider(
-                        minimum=1,
-                        maximum=60,
-                        value=10,
-                        step=1,
-                        label="Video Duration (seconds)"
-                    )
-                    
-                    fps_slider = gr.Slider(
-                        minimum=15,
-                        maximum=60,
-                        value=30,
-                        step=1,
-                        label="Frames Per Second"
-                    )
+                fps_slider = gr.Slider(
+                    minimum=15,
+                    maximum=60,
+                    value=30,
+                    step=1,
+                    label="Frames Per Second"
+                )
                 
                 colormap_dropdown = gr.Dropdown(
                     choices=["viridis", "plasma", "inferno", "magma", "cividis", "hot", "cool", "spring", "summer", "autumn", "winter"],
@@ -253,28 +230,22 @@ def create_gradio_app():
                 video_output = gr.Video(label="Generated Spectrogram Video")
                 status_output = gr.Textbox(label="Status", interactive=False)
         
-        # Update duration slider when audio file is uploaded
-        audio_input.change(
-            fn=update_duration_slider,
-            inputs=[audio_input],
-            outputs=[duration_slider]
-        )
         
         # Set up the event handler
         generate_btn.click(
             fn=process_audio_file,
-            inputs=[audio_input, duration_slider, fps_slider, colormap_dropdown],
+            inputs=[audio_input, fps_slider, colormap_dropdown],
             outputs=[video_output, status_output]
         )
         
         gr.Markdown("""
         ## How it works:
         1. Upload a WAV audio file
-        2. Adjust video duration, frame rate, and colormap
+        2. Adjust frame rate and colormap
         3. Click "Generate Video" to create a scrolling spectrogram visualization
         4. The video will show a time-scrolling view of the audio's frequency content
         
-        **Note:** Processing may take a few minutes depending on file size and video duration.
+        **Note:** Video duration will match the audio file duration. Processing may take a few minutes depending on file size.
         """)
     
     return app
