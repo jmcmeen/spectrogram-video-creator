@@ -242,7 +242,7 @@ def create_gradio_app():
                 
                 colormap_dropdown = gr.Dropdown(
                     choices=["viridis", "plasma", "inferno", "magma", "cividis", "hot", "cool", "spring", "summer", "autumn", "winter"],
-                    value="viridis",
+                    value="inferno",
                     label="Colormap"
                 )
                 
