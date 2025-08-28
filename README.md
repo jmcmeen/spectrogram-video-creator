@@ -2,6 +2,8 @@
 
 A Gradio web application that creates scrolling spectrogram videos from audio files. Upload any audio file and watch as its frequency content is visualized in a beautiful, time-scrolling spectrogram animation.
 
+Tested with Python 3.12.9
+
 ## Features
 
 - **Multiple Audio Format Support**: Works with MP3, WAV, FLAC, M4A, OGG, and other librosa-compatible formats
