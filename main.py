@@ -40,9 +40,11 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
     total_frames = int(video_duration * fps)
     time_per_frame = len(times) / total_frames
     
-    # Set up the figure
+    # Set up the figure with no margins
     fig, ax = plt.subplots(figsize=(12, 8))
     plt.style.use('dark_background')
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.set_position([0, 0, 1, 1])
     
     # Create temporary video file
     temp_dir = tempfile.mkdtemp()
@@ -123,36 +125,15 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
                       vmin=S_db.min(),
                       vmax=S_db.max())
         
-        # Calculate current playback time based on the center of the visible window
-        center_time_idx = scroll_position + window_size // 2
-        current_playback_time = times[min(max(0, center_time_idx), len(times) - 1)]
+        # Remove all axes elements for clean full-screen display
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlim(current_times[0], current_times[-1])
+        ax.set_ylim(freqs[0], freqs[-1])
         
-        # Customize the plot
-        ax.set_xlabel('Time (s)', fontsize=12, color='white')
-        ax.set_ylabel('Frequency (Hz)', fontsize=12, color='white')
-        ax.set_title(f'Scrolling Spectrogram - Time: {current_playback_time:.2f}s', 
-                    fontsize=14, color='white')
-        
-        # Set y-axis to show frequency range up to Nyquist frequency
-        ax.set_ylim(0, sr // 2)
-        
-        # Add colorbar
-        if frame_idx == 0:
-            cbar = plt.colorbar(im, ax=ax)
-            cbar.set_label('Magnitude (dB)', color='white')
-            cbar.ax.yaxis.set_tick_params(color='white')
-            cbar.ax.yaxis.label.set_color('white')
-        
-        # Style the plot
-        ax.tick_params(colors='white')
-        ax.spines['bottom'].set_color('white')
-        ax.spines['top'].set_color('white')
-        ax.spines['right'].set_color('white')
-        ax.spines['left'].set_color('white')
-        
-        # Add a vertical line at fixed position (center of screen) to show current time
-        screen_center_time = (current_times[0] + current_times[-1]) / 2
-        ax.axvline(x=screen_center_time, color='red', linestyle='--', alpha=0.7, linewidth=2)
+        # Remove all spines/borders
+        for spine in ax.spines.values():
+            spine.set_visible(False)
         
         # Convert matplotlib figure to OpenCV format
         fig.canvas.draw()
@@ -230,7 +211,7 @@ def update_duration_slider(audio_file):
 
 def create_gradio_app():
     with gr.Blocks(title="Spectrogram Video Generator") as app:
-        gr.Markdown("# 🎵 Scrolling Spectrogram Video Generator")
+        gr.Markdown("# Spectrogram Video Generator")
         gr.Markdown("Upload a WAV file to create a scrolling spectrogram video visualization.")
         
         with gr.Row():
