@@ -14,7 +14,7 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
     Create a scrolling spectrogram video from an audio file.
     
     Args:
-        audio_file: Path to the input WAV file
+        audio_file: Path to the input audio file (supports all librosa-compatible formats)
         video_duration: Duration of the output video in seconds
         fps: Frames per second for the output video
         colormap: Colormap for the spectrogram
@@ -174,12 +174,12 @@ def process_audio_file(audio_file, fps, colormap):
     """
     try:
         if audio_file is None:
-            return None, "Please upload a WAV file."
+            return None, "Please upload an audio file."
         
         # Get audio duration to use as video duration
         audio_duration = get_audio_duration(audio_file)
         if audio_duration is None:
-            return None, "Could not determine audio duration."
+            return None, "Could not determine audio duration. Please ensure the file is a valid audio format."
         
         # Create the video with audio duration
         video_path = create_spectrogram_video(
@@ -198,15 +198,14 @@ def process_audio_file(audio_file, fps, colormap):
 def create_gradio_app():
     with gr.Blocks(title="Spectrogram Video Generator") as app:
         gr.Markdown("# Spectrogram Video Generator")
-        gr.Markdown("Upload a WAV file to create a scrolling spectrogram video visualization.")
+        gr.Markdown("Upload an audio file to create a scrolling spectrogram video visualization.")
         
         with gr.Row():
             with gr.Column(scale=1):
                 # Input components
                 audio_input = gr.Audio(
-                    label="Upload WAV File",
-                    type="filepath",
-                    format="wav"
+                    label="Upload Audio File",
+                    type="filepath"
                 )
                 
                 fps_slider = gr.Slider(
@@ -240,7 +239,7 @@ def create_gradio_app():
         
         gr.Markdown("""
         ## How it works:
-        1. Upload a WAV audio file
+        1. Upload an audio file (supports MP3, WAV, FLAC, M4A, OGG, and other common formats)
         2. Adjust frame rate and colormap
         3. Click "Generate Video" to create a scrolling spectrogram visualization
         4. The video will show a time-scrolling view of the audio's frequency content
