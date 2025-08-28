@@ -9,7 +9,7 @@ import tempfile
 import os
 from pathlib import Path
 
-def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='viridis'):
+def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='viridis', include_audio=True):
     """
     Create a scrolling spectrogram video from an audio file.
     
@@ -18,6 +18,7 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
         video_duration: Duration of the output video in seconds
         fps: Frames per second for the output video
         colormap: Colormap for the spectrogram
+        include_audio: Whether to include the original audio in the video
     
     Returns:
         Path to the generated video file
@@ -48,11 +49,16 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
     
     # Create temporary video file
     temp_dir = tempfile.mkdtemp()
-    video_path = os.path.join(temp_dir, 'spectrogram_video.mp4')
+    if include_audio:
+        temp_video_path = os.path.join(temp_dir, 'spectrogram_silent.mp4')
+        video_path = os.path.join(temp_dir, 'spectrogram_video.mp4')
+    else:
+        video_path = os.path.join(temp_dir, 'spectrogram_video.mp4')
+        temp_video_path = video_path
     
     # Set up video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1200, 800))
+    video_writer = cv2.VideoWriter(temp_video_path, fourcc, fps, (1200, 800))
     
     # Window size for scrolling effect
     window_size = min(200, S_db.shape[1] // 4)  # Show 1/4 of the spectrogram at a time
@@ -152,6 +158,29 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
     video_writer.release()
     plt.close(fig)
     
+    # If audio should be included, combine video with audio using ffmpeg
+    if include_audio and temp_video_path != video_path:
+        try:
+            import subprocess
+            # Use ffmpeg to combine video with audio
+            cmd = [
+                'ffmpeg', '-y',  # -y to overwrite output file
+                '-i', temp_video_path,  # video input
+                '-i', audio_file,  # audio input
+                '-c:v', 'copy',  # copy video codec
+                '-c:a', 'aac',  # encode audio to AAC
+                '-shortest',  # match shortest stream duration
+                video_path
+            ]
+            subprocess.run(cmd, check=True, capture_output=True)
+            # Remove the temporary silent video
+            os.remove(temp_video_path)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            # If ffmpeg fails, return the silent video with a warning
+            print(f"Warning: Could not add audio to video: {e}")
+            print("Returning video without audio. Install ffmpeg for audio support.")
+            return temp_video_path
+    
     return video_path
 
 def get_audio_duration(audio_file):
@@ -168,7 +197,7 @@ def get_audio_duration(audio_file):
     except Exception:
         return None
 
-def process_audio_file(audio_file, fps, colormap):
+def process_audio_file(audio_file, fps, colormap, include_audio):
     """
     Process the uploaded audio file and create spectrogram video.
     """
@@ -186,7 +215,8 @@ def process_audio_file(audio_file, fps, colormap):
             audio_file, 
             video_duration=audio_duration, 
             fps=fps, 
-            colormap=colormap
+            colormap=colormap,
+            include_audio=include_audio
         )
         
         return video_path, "Video generated successfully!"
@@ -222,6 +252,12 @@ def create_gradio_app():
                     label="Colormap"
                 )
                 
+                include_audio_checkbox = gr.Checkbox(
+                    value=True,
+                    label="Include audio in video",
+                    info="Include the original audio track in the generated video"
+                )
+                
                 generate_btn = gr.Button("Generate Video", variant="primary")
             
             with gr.Column(scale=2):
@@ -233,18 +269,18 @@ def create_gradio_app():
         # Set up the event handler
         generate_btn.click(
             fn=process_audio_file,
-            inputs=[audio_input, fps_slider, colormap_dropdown],
+            inputs=[audio_input, fps_slider, colormap_dropdown, include_audio_checkbox],
             outputs=[video_output, status_output]
         )
         
         gr.Markdown("""
         ## How it works:
         1. Upload an audio file (supports MP3, WAV, FLAC, M4A, OGG, and other common formats)
-        2. Adjust frame rate and colormap
+        2. Adjust frame rate, colormap, and audio inclusion settings
         3. Click "Generate Video" to create a scrolling spectrogram visualization
         4. The video will show a time-scrolling view of the audio's frequency content
         
-        **Note:** Video duration will match the audio file duration. Processing may take a few minutes depending on file size.
+        **Note:** Video duration will match the audio file duration. Audio inclusion requires ffmpeg to be installed. Processing may take a few minutes depending on file size.
         """)
     
     return app
