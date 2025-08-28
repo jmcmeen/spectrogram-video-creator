@@ -1,4 +1,4 @@
-# Spectrogram Video Generator
+# Spectrogram Video Creator
 
 A Gradio web application that creates scrolling spectrogram videos from audio files. Upload any audio file and watch as its frequency content is visualized in a beautiful, time-scrolling spectrogram animation.
 
