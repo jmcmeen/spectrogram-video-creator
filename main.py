@@ -55,17 +55,64 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
     # Window size for scrolling effect
     window_size = min(200, S_db.shape[1] // 4)  # Show 1/4 of the spectrogram at a time
     
+    # Calculate total scrolling range (start from off-screen right, end off-screen left)
+    total_scroll_frames = S_db.shape[1] + window_size
+    scroll_per_frame = total_scroll_frames / total_frames
+    
     for frame_idx in range(total_frames):
         ax.clear()
         
-        # Calculate the current time window
-        center_frame = int(frame_idx * time_per_frame)
-        start_frame = max(0, center_frame - window_size // 2)
-        end_frame = min(S_db.shape[1], center_frame + window_size // 2)
+        # Calculate scrolling position (starts at -window_size, ends at S_db.shape[1])
+        scroll_position = int(frame_idx * scroll_per_frame - window_size)
+        start_frame = max(0, scroll_position)
+        end_frame = min(S_db.shape[1], scroll_position + window_size)
         
-        # Extract current window of spectrogram
-        current_spec = S_db[:, start_frame:end_frame]
-        current_times = times[start_frame:end_frame]
+        # Handle padding for off-screen portions
+        if scroll_position < 0:
+            # Pad with zeros on the left (off-screen right at start)
+            pad_left = abs(scroll_position)
+            current_spec = S_db[:, start_frame:end_frame]
+            current_spec = np.pad(current_spec, ((0, 0), (pad_left, 0)), mode='constant', constant_values=S_db.min())
+            
+            # Create corresponding time array with padding
+            visible_times = times[start_frame:end_frame]
+            if len(visible_times) > 0:
+                time_step = visible_times[1] - visible_times[0] if len(visible_times) > 1 else 0.1
+                pad_times = np.arange(visible_times[0] - pad_left * time_step, visible_times[0], time_step)
+                current_times = np.concatenate([pad_times, visible_times])
+            else:
+                current_times = np.linspace(0, window_size * 0.01, window_size)
+                
+        elif scroll_position + window_size > S_db.shape[1]:
+            # Pad with zeros on the right (off-screen left at end)
+            pad_right = scroll_position + window_size - S_db.shape[1]
+            current_spec = S_db[:, start_frame:end_frame]
+            current_spec = np.pad(current_spec, ((0, 0), (0, pad_right)), mode='constant', constant_values=S_db.min())
+            
+            # Create corresponding time array with padding
+            visible_times = times[start_frame:end_frame]
+            if len(visible_times) > 0:
+                time_step = visible_times[1] - visible_times[0] if len(visible_times) > 1 else 0.1
+                pad_times = np.arange(visible_times[-1] + time_step, visible_times[-1] + (pad_right + 1) * time_step, time_step)
+                current_times = np.concatenate([visible_times, pad_times])
+            else:
+                current_times = np.linspace(0, window_size * 0.01, window_size)
+        else:
+            # Normal case - fully within spectrogram
+            current_spec = S_db[:, start_frame:end_frame]
+            current_times = times[start_frame:end_frame]
+        
+        # Ensure we have the right window size
+        if current_spec.shape[1] != window_size:
+            if current_spec.shape[1] < window_size:
+                pad_needed = window_size - current_spec.shape[1]
+                current_spec = np.pad(current_spec, ((0, 0), (0, pad_needed)), mode='constant', constant_values=S_db.min())
+                if len(current_times) > 0:
+                    time_step = current_times[1] - current_times[0] if len(current_times) > 1 else 0.01
+                    pad_times = np.arange(current_times[-1] + time_step, current_times[-1] + (pad_needed + 1) * time_step, time_step)
+                    current_times = np.concatenate([current_times, pad_times])
+                else:
+                    current_times = np.linspace(0, window_size * 0.01, window_size)
         
         # Plot spectrogram
         im = ax.imshow(current_spec, 
@@ -76,10 +123,14 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
                       vmin=S_db.min(),
                       vmax=S_db.max())
         
+        # Calculate current playback time based on the center of the visible window
+        center_time_idx = scroll_position + window_size // 2
+        current_playback_time = times[min(max(0, center_time_idx), len(times) - 1)]
+        
         # Customize the plot
         ax.set_xlabel('Time (s)', fontsize=12, color='white')
         ax.set_ylabel('Frequency (Hz)', fontsize=12, color='white')
-        ax.set_title(f'Scrolling Spectrogram - Time: {current_times[len(current_times)//2]:.2f}s', 
+        ax.set_title(f'Scrolling Spectrogram - Time: {current_playback_time:.2f}s', 
                     fontsize=14, color='white')
         
         # Set y-axis to show frequency range up to Nyquist frequency
@@ -99,9 +150,9 @@ def create_spectrogram_video(audio_file, video_duration=10, fps=30, colormap='vi
         ax.spines['right'].set_color('white')
         ax.spines['left'].set_color('white')
         
-        # Add a vertical line to show current time position
-        current_time = times[center_frame] if center_frame < len(times) else times[-1]
-        ax.axvline(x=current_time, color='red', linestyle='--', alpha=0.7, linewidth=2)
+        # Add a vertical line at fixed position (center of screen) to show current time
+        screen_center_time = (current_times[0] + current_times[-1]) / 2
+        ax.axvline(x=screen_center_time, color='red', linestyle='--', alpha=0.7, linewidth=2)
         
         # Convert matplotlib figure to OpenCV format
         fig.canvas.draw()
